@@ -277,3 +277,127 @@ __信号是事件发生时对进程的通知机制，也可以把它称为`软�
 
 `信号是异步的`
 
+### 进程对信号的处理
+进程对接受到的信号有三种不同的处理方式：1.忽略信号 2.捕获信号 3.执行系统默认操作
+
+__Linux中提供了`signal函数`和`sigaction函数`来设置信号的处理方式__
+
+##### `signal 函数`
+
+```
+#include <signal.h> //需要包含此头文件
+typedef void (*sig_t)(int);
+sig_t signal(int signum, sig_t handler); //signum是需要设置的信号，建议使用信号名字（也可以用数字编号），handle是指向信号对应的信号处理函数，接受到信号后自动执行处理函数
+//函数执行成功则返回指向信号处理函数的指针，否则返回SIG_ERR
+```
+
+##### 两种不同状态下的信号处理方式
+1. 当程序刚启动时，进程默认对所以信号的处理方式都是系统默认操作
+2. 当进程调用fork函数创建子进程时，子进程也会继承父进程的信号处理方式
+
+##### `sigaction函数`（推荐使用）
+
+```
+#include <signal.h>
+int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact); //signum同是需要设置的信号，act是一个struct sigaction 类型指针，指向一个 struct sigaction 数据结构，该数据结构描述了信号的处理方式，oldact 参数也是一个 struct sigaction 类型指针，指向一个 struct sigaction 数据结构。如果参数
+oldact 不为 NULL，则会将信号之前的处理方式等信息通过参数 oldact 返回出来；如果无意获取此类信息，那么可将该参数设置为 NULL
+```
+
+__struct sigaction结构体__
+```
+struct sigaction {
+ void (*sa_handler)(int); //信号处理函数
+ void (*sa_sigaction)(int, siginfo_t *, void *);也是一个信号处理函数，提供更多参数
+ sigset_t sa_mask;
+ int sa_flags;
+ void (*sa_restorer)(void);
+};
+
+```
+
+__*一般来说，信号处理函数设计越简单越好，这一个重要的原因在于，设计的越简单这将降低引发信号竞争条件的风险*__
+
+### 向进程发送信号
+
+#### `kill函数`
+一个进程可以通过`kill函数`向另外一个进程发送信号
+
+```
+#include <sys/types.h>
+#include <signal.h>
+
+int kill(pid_t pid, int sig);  //进程pid,sig是需要发送的信号
+
+//
+如果 pid 为正，则信号 sig 将发送到 pid 指定的进程。
+如果 pid 等于 0，则将 sig 发送到当前进程的进程组中的每个进程。
+如果 pid 等于-1，则将 sig 发送到当前进程有权发送信号的每个进程，但进程 1（init）除外。
+如果 pid 小于-1，则将 sig 发送到 ID 为-pid 的进程组中的每个进程
+```
+__进程中将信号发送给另一个进程是需要权限的，并不是可以随便给任何一个进程发送信号，超级用户root 进程可以将信号发送给任何进程，但对于非超级用户（普通用户）进程来说，其基本规则是发送者进程的实际用户 ID 或有效用户 ID 必须等于接收者进程的实际用户 ID 或有效用户 ID__
+
+
+#### `raise函数`
+```
+#include <signal.h>
+int raise(int sig); //sig为需要发送的信号
+```
+`raise函数`其实等价于`kill(getpid()),sig)`
+
+
+#### 'alarm函数'
+使用 alarm()函数可以设置一个定时器（闹钟），当定时器定时时间到时，内核会向进程发送 `SIGALRM信号`
+```
+#include <unistd.h>
+unsigned int alarm(unsigned int seconds); //seconds是以秒为单位的定时时间，如果为0，则表示取消之前设置的alarm闹钟
+//返回值：如果在调用 alarm()时，之前已经为该进程设置了 alarm 闹钟还没有超时，则该闹钟的剩余值作
+为本次 alarm()函数调用的返回值，之前设置的闹钟则被新的替代；否则返回 0
+//需要注意的是 alarm 闹钟并不能循环触发，只能触发一次，若想要实现循环触发，可以在 SIGALRM 信
+号处理函数中再次调用 alarm()函数设置定时器
+```
+
+#### `pause函数`
+`pause()`系统调用可以使得进程暂停运行、进入休眠状态，直到进程捕获到一个信号为止，只有执行了信号处理函数并从其返回时，pause()才返回，在这种情况下，pause()返回-1，并且将 errno 设置为 EINTR
+```
+#include <unistd.h>
+int pause(void);
+```
+
+
+### 信号集
+__通常我们需要有一个能表示多个信号（一组信号）的数据类型---信号集（signalset）__
+
+信号集其实就是sigset_t类型的数据结构，使用这个结构体可以表示一组信号，将多个信号添加到该数据结构中
+```
+# define _SIGSET_NWORDS (1024 / (8 * sizeof (unsigned long int)))
+typedef struct
+{
+  unsigned long int __val[_SIGSET_NWORDS];
+} sigset_t;
+```
+__Linux提供了诸如`sigemptyset`,`sigfillset`,`sigaddset`,`sigdelset`,`sigismember`等信号集的API__
+
+...待
+
+******************************
+# 进程
+
+1. 操作系统下的应用程序在运行 main()函数之前需要先执行一段`引导代码`，最终由这段引导代码去调用应用程序的 main()函数。在编译链接时，由链接器将引导代码链接到我们的应用程序当中，一起构成最终的可执行文件
+2. 程序运行需要通过操作系统的`加载器`来实现，加载器是操作系统中的程序，当执行程序时，加载器负责将此应用程序加载内存中去执行
+3. 命令行参数（command-line argument）由 shell 进程逐一进行解析，shell 进程会将这些参数传递给加载器，加载器加载应用程序时会将其传递给应用程序引导代码，当引导程序调用 main()函数时，在由它最终传递给 main()函数
+4. 程序结束分为正常终止和异常终止： 
+   1. main()函数中通过 return 语句返回来终止进程 
+   2.  应用程序中调用 exit()函数终止进程
+   3.  应用程序中调用_exit()或_Exit()终止进程
+   4.  应用程序中调用 abort()函数终止进程（异常终止）
+   5.  进程接收到一个信号，譬如 SIGKILL 信号（异常终止）
+
+
+#### 注册进程终止处理函数`atexit`
+atexit()库函数用于注册一个进程在**正常终止**时要调用的函数
+
+```
+#include <stdlib.h>
+int atexit(void (*function)(void));
+
+```

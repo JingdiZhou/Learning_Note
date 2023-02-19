@@ -107,3 +107,13 @@ ENDPROC(cpu_init_crit)
 
 ### lowlevel_init函数
 `lowlevel_init`在`arch/arm/cpu/armv7/lowlevel_init.S`中
+
+### s_init函数
+`s_init函数`定义在`arch/arm/cpu/armv7/mx6/soc.c`
+ 对 于
+I.MX6UL/I.MX6ULL 来说，s_init 就是个空函数。从 s_init 函数退出以后进入函数 lowlevel_init，
+但是 lowlevel_init 函数也执行完成了，返回到了函数 cpu_init_crit，函数 cpu_init_crit 也执行完
+成了，最终返回到 save_boot_params_ret
+
+### _main函数
+`_main 函数定义在文件 arch/arm/lib/crt0.S`
