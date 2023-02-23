@@ -56,6 +56,7 @@ static void __exit xxx_exit(void)  //，定义了个名为 xxx_exit 驱动出口
 
 
 ### 字符设备注册与注销
+`register_chrdev` 和 `unregister_chrdev` 这两个函数是老版本驱动使用的函数，现在新的字符设备驱动已经不再使用这两个函数，而是使用Linux内核推荐的新字符设备驱动API函数
 ![](pictures/drive_module_register.jpg)
 
 ##### 实现设备的具体操作函数
@@ -157,3 +158,80 @@ void unregister_chrdev_region(dev_t from, unsigned count)
 
 ```
 
+
+
+#### 注册进程终止处理函数`atexit`
+atexit()库函数用于注册一个进程在**正常终止**时要调用的函数
+
+```
+#include <stdlib.h>
+int atexit(void (*function)(void));
+
+```
+
+
+### LED
+Linux 下的任何外设驱动，最终都是要配置相应的硬件寄存器
+
+#### 地址映射
+Linux 内核启动的时候会初始化 `MMU`，设置好内存映射，设置好以后 CPU 访问的都是虚拟地址
+
+`MMU`主要功能是：
+1. 完成虚拟空间到物理空间的映射
+2. 内存保护，设置存储器的访问权限，设置虚拟存储空间的缓冲特性
+
+在涉及物理内存和虚拟内存之间的交互，使用`ioremap`和`iounmap`这两个函数
+
+#### ioremap函数
+`ioremap` 函数用于获取指定**物理地址空间对应的虚拟地址空间**，定义在
+`arch/arm/include/asm/io.h` 文件中
+```
+#define ioremap(cookie,size) __arm_ioremap((cookie), (size), 
+MT_DEVICE)
+
+ void __iomem * __arm_ioremap(phys_addr_t phys_addr, size_t size, 
+unsigned int mtype)
+ {
+ return arch_ioremap_caller(phys_addr, size, mtype,
+__builtin_return_address(0));
+ }
+
+ //ioremap 是个宏，有两个参数：cookie 和 size，真正起作用的是函数__arm_ioremap，此函
+数有三个参数和一个返回值
+//phys_addr:要映射的物理起始地址
+//size:要映射的内存空间大小
+//ioremap 的类型，可以选择 MT_DEVICE、MT_DEVICE_NONSHARED、
+MT_DEVICE_CACHED 和 MT_DEVICE_WC，ioremap 函数选择 MT_DEVICE
+//返回值是__iomem 类型的指针，指向映射后的虚拟空间首地址
+```
+
+#### iounmap 函数
+卸载驱动的时候需要使用 iounmap 函数释放掉 ioremap 函数所做的映射
+
+```
+void iounmap (volatile void __iomem *addr)
+//iounmap 只有一个参数 addr，此参数就是要取消映射的虚拟地址空间首地址
+```
+
+### 内存访问函数
+当外部寄存器或内存映射到 IO 空间时，称为 I/O 端口。当外部寄存器或内存映射到内存空间时，称为 I/O 内存。但是对于 ARM 来说没有 I/O 空间这个概念，因此 ARM 体系下只有 I/O 内存(可以直接理解为内存)。使用 ioremap 函数将寄存器的物理地址映射到虚拟地址以后，我们就可以直接通过指针访问这些地址，但是 Linux 内核不建议这么做，而是推荐使用一组操作函数来对映射后的内存进行读写操作
+
+1. 读操作函数
+
+```
+u8 readb(const volatile void __iomem *addr)
+u16 readw(const volatile void __iomem *addr)
+u32 readl(const volatile void __iomem *addr)
+//参数 addr 就是要读取写内存地址，返回值就是读取到的数据
+```
+
+2. 写操作函数
+```
+void writeb(u8 value, volatile void __iomem *addr)
+void writew(u16 value, volatile void __iomem *addr)
+void writel(u32 value, volatile void __iomem *addr)
+//参数 value 是要写入的数值，addr 是要写入的地址
+ ```
+
+### 新字符设备驱动
+`register_chrdev` 和 `unregister_chrdev `这两个函数是老版本驱动使用的函数，现在新的字符设备驱动已经不再使用这两个函数，而是使用Linux内核推荐的新字符设备驱动API函数
