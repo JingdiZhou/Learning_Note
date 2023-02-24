@@ -59,7 +59,7 @@ static void __exit xxx_exit(void)  //，定义了个名为 xxx_exit 驱动出口
 `register_chrdev` 和 `unregister_chrdev` 这两个函数是老版本驱动使用的函数，现在新的字符设备驱动已经不再使用这两个函数，而是使用Linux内核推荐的新字符设备驱动API函数
 ![](pictures/drive_module_register.jpg)
 
-##### 实现设备的具体操作函数
+#### 实现设备的具体操作函数
 file_operations 结构体就是设备的具体操作函数，其中对字符设备有如下两个要求：
 1. 能够对字符设备进行打开和关闭操作。设备打开和关闭是最基本的要求，几乎所有的设备都得提供打开和关闭的功能。因此我们需要实现 file_operations 中的 open 和 release 这两个函数
 2. 对字符设备能实现读写操作
@@ -235,3 +235,47 @@ void writel(u32 value, volatile void __iomem *addr)
 
 ### 新字符设备驱动
 `register_chrdev` 和 `unregister_chrdev `这两个函数是老版本驱动使用的函数，现在新的字符设备驱动已经不再使用这两个函数，而是使用Linux内核推荐的新字符设备驱动API函数
+
+
+#### 新字符设备注册方法
+
+**字符设备结构**：在 Linux 中使用 cdev 结构体表示一个字符设备，cdev 结构体在 include/linux/cdev.h 文件中的定义如下：
+```
+struct cdev {
+    struct kobject kobj;
+    struct module *owner;
+    const struct file_operations *ops;  //字符设备文件操作函数集合
+    struct list_head list;
+    dev_t dev;    //设备号
+    unsigned int count; 
+};
+```
+
+#### cdev_init 函数
+定义好 cdev 变量以后就要使用 cdev_init 函数对其进行初始化
+```
+void cdev_init(struct cdev *cdev, const struct file_operations *fops)
+//参数 cdev 就是要初始化的 cdev 结构体变量，参数 fops 就是字符设备文件操作函数集合
+```
+
+#### cdev_add 函数 (Linux 内核中大量的字符设备驱动都是采用这种方法向 Linux 内核添加字符设备)
+cdev_add 函数用于向 Linux 系统添加字符设备(cdev 结构体变量)，首先使用 cdev_init 函数,完成对 cdev 结构体变量的初始化，然后使用cdev_add 函数向 Linux 系统添加这个字符设备
+```
+int cdev_add(struct cdev *p, dev_t dev, unsigned count)
+//参数 p 指向要添加的字符设备(cdev 结构体变量)，参数 dev 就是设备所使用的设备号，参数 count 是要添加的设备数量
+```
+
+#### cdev_del 函数
+卸载驱动的时候一定要使用 cdev_del 函数从 Linux 内核中删除相应的字符设备
+```
+void cdev_del(struct cdev *p)
+//参数 p 就是要删除的字符设备
+```
+
+### 自动创建设备节点
+在驱动中实现自动创建设备节点的功能以后，使用 modprobe 加载驱动模块成功的话就会自动在/dev 目录下创建对应的设备文件
+
+#### mdev机制
+udev 是一个用户程序，在 Linux 下通过 udev 来实现设备文件的创建与删除，udev 可以检测系统中硬件设备状态，可以根据系统中硬件设备状态来创建或者删除设备文件。比如使用modprobe 命令成功加载驱动模块以后就自动在/dev 目录下创建对应的设备节点文件,使用rmmod 命令卸载驱动模块以后就删除掉/dev 目录下的设备节点文件。使用 busybox 构建根文件系统的时候，busybox 会创建一个 udev 的简化版本———mdev，所以在嵌入式 Linux 中我们使用mdev 来实现设备节点文件的自动创建与删除，Linux 系统中的热插拔事件也由 mdev 管理
+
+
