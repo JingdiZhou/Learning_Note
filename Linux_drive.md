@@ -278,6 +278,106 @@ void cdev_del(struct cdev *p)
 udev 是一个用户程序，在 Linux 下通过 udev 来实现设备文件的创建与删除，udev 可以检测系统中硬件设备状态，可以根据系统中硬件设备状态来创建或者删除设备文件。比如使用modprobe 命令成功加载驱动模块以后就自动在/dev 目录下创建对应的设备节点文件,使用rmmod 命令卸载驱动模块以后就删除掉/dev 目录下的设备节点文件。使用 busybox 构建根文件系统的时候，busybox 会创建一个 udev 的简化版本———mdev，所以在嵌入式 Linux 中我们使用mdev 来实现设备节点文件的自动创建与删除，Linux 系统中的热插拔事件也由 mdev 管理
 
 #### 创建和删除类
-自动创建设备节点的工作是在驱动程序的`入口函数`中完成的，一般在 `cdev_add `函数后面添加自动创建设备节点相关代码。首先要创建一个 `class` 类，`class` 是个`结构体`，定义在文件`include/linux/device.h `里面。`class_create` 是类创建函数，`class_create` 是个宏定义
+自动创建设备节点的工作是在驱动程序的`入口函数`中完成的，一般在 `cdev_add `函数后面添加自动创建设备节点相关代码。首先要创建一个 `class` 类，`class` 是个`结构体`，定义在文件`include/linux/device.h `里面。`class_create` 是**类创建函数**，`class_create` 是个宏定义
+
+```
+#define class_create(owner, name) \
+ ({ \
+ static struct lock_class_key __key; \
+ __class_create(owner, name, &__key); \
+ })
+
+ struct class *__class_create(struct module *owner, const char *name,
+ struct lock_class_key *key)
+```
+`class_create`展开后是：
+```
+struct class *class_create (struct module *owner, const char *name)
+```
+class_create 一共有两个参数，参数 owner 一般为 `THIS_MODULE`，参数 name 是`类名字`。返回值是个指向结构体 class 的`指针`，也就是创建的类
+
+卸载驱动程序的时候需要删除掉类，类删除函数为 `class_destroy`
+```
+void class_destroy(struct class *cls);//参数 cls 就是要删除的类
+```
+
+
+#### 创建设备
+创建好类以后还不能实现自动创建设备节点，我们还需要在这个类下创建一个设备，使用 `device_create` 函数在类下面`创建设备`
+```
+//device_create 是个可变参数函数
+struct device *device_create(struct class *class,  //参数class 就是设备要创建哪个类下面
+struct device *parent,   //；参数 parent 是父设备，一般为 NULL，也就是没有父设备
+dev_t devt,     //参数 devt 是设备号
+void *drvdata,  //参数 drvdata 是设备可能会使用的一些数据，一般为 NULL
+const char *fmt, //参数 fmt 是设备名字，如果设置 fmt=xxx 的话，就会生成/dev/xxx这个设备文件
+...)
+
+//返回值就是创建好的设备
+```
+
+同样的，卸载驱动的时候需要**删除掉创建的设备**，设备删除函数为 `device_destroy`
+```
+void device_destroy(struct class *class, dev_t devt)
+//参数 class 是要删除的设备所处的类
+//参数 devt 是要删除的设备号
+```
+
+__*在驱动入口函数里面创建类和设备，在驱动出口函数里面删除类和设备*__
+
+模板如下：
+```
+ struct class *class;   /* 类 */ 
+ struct device *device; /* 设备 */
+ dev_t devid;           /* 设备号 */ 
+ 
+ /* 驱动入口函数 */
+ static int __init led_init(void)
+ {
+ /* 创建类 */
+    class = class_create(THIS_MODULE, "xxx");
+ /* 创建设备 */
+    device = device_create(class, NULL, devid, NULL, "xxx");
+    return 0;
+ }
+
+ /* 驱动出口函数 */
+ static void __exit led_exit(void)
+ {
+ /* 删除设备 */
+    device_destroy(newchrled.class, newchrled.devid);
+ /* 删除类 */
+    class_destroy(newchrled.class);
+ }
+
+ module_init(led_init);
+ module_exit(led_exit);
+```
+
+#### 设置文件私有数据
+每个硬件设备都有一些属性，比如主设备号(dev_t)，类(class)、设备(device)、开关状态(state)等等，在编写驱动的时候你可以将这些属性全部写成变量的形式。对于一个设备的所有属性信息我们最好将其做成一个结构体
+```
+/* 设备结构体作为私有数据 */
+ struct test_dev{
+    dev_t devid; /* 设备号 */
+    struct cdev cdev; /* cdev */
+    struct class *class; /* 类 */
+    struct device *device; /* 设备 */
+    int major; /* 主设备号 */
+    int minor; /* 次设备号 */
+ };
+ 
+ struct test_dev testdev;
+ 
+ /* open 函数 */
+ static int test_open(struct inode *inode, struct file *filp)
+ {
+    filp->private_data = &testdev; /* 设置私有数据 */
+    return 0;
+ }
+```
+
+
+
 
 
