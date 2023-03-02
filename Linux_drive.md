@@ -158,6 +158,11 @@ void unregister_chrdev_region(dev_t from, unsigned count)
 ```
 
 
+- `MKDEV`宏用来将主设备号和次设备号组合成`32位完整`的设备号
+- `MAJOR`宏用来从32位设备号中分离出`主设备号`
+- `MINOR`宏用来从32位设备号中分离出`次设备号`
+
+
 
 #### 注册进程终止处理函数`atexit`
 atexit()库函数用于注册一个进程在**正常终止**时要调用的函数
@@ -355,19 +360,19 @@ __*在驱动入口函数里面创建类和设备，在驱动出口函数里面�
 ```
 
 #### 设置文件私有数据
-每个硬件设备都有一些属性，比如主设备号(dev_t)，类(class)、设备(device)、开关状态(state)等等，在编写驱动的时候你可以将这些属性全部写成变量的形式。对于一个设备的所有属性信息我们最好将其做成一个结构体
+每个硬件设备都有一些属性，比如主设备号(dev_t)，类(class)、设备(device)、开关状态(state)等等，在编写驱动的时候你可以将这些属性全部写成变量的形式。对于一个设备的所有属性信息我们最好将其做成一个结构体，模板如下：
 ```
 /* 设备结构体作为私有数据 */
  struct test_dev{
     dev_t devid; /* 设备号 */
-    struct cdev cdev; /* cdev */
+    struct cdev cdev; /* cdev,字符设备结构体 */
     struct class *class; /* 类 */
     struct device *device; /* 设备 */
     int major; /* 主设备号 */
     int minor; /* 次设备号 */
  };
  
- struct test_dev testdev;
+ struct test_dev testdev;  //结构体实例化
  
  /* open 函数 */
  static int test_open(struct inode *inode, struct file *filp)
@@ -376,6 +381,8 @@ __*在驱动入口函数里面创建类和设备，在驱动出口函数里面�
     return 0;
  }
 ```
+
+
 
 
 
